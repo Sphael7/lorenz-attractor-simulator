@@ -4,16 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lorenz Attractor Simulation</title>
+    <!-- Import the Three.js library for 3D graphics -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
+        /* Basic CSS for the page layout and styling */
         body {
             margin: 0;
-            overflow: hidden;
+            overflow: hidden; /* Prevents scrollbars */
             font-family: 'Inter', sans-serif;
             background: linear-gradient(135deg, #101018 0%, #05050A 100%);
             color: #e0e0e0;
         }
-        canvas { display: block; }
+        canvas { display: block; } /* Ensures the canvas takes up the full space */
         #info {
             position: absolute;
             top: 10px;
@@ -23,7 +25,7 @@
             border-radius: 8px;
             font-size: 14px;
             color: #e0e0e0;
-            user-select: none;
+            user-select: none; /* Prevents text selection */
             max-width: 90%;
         }
         #info h1 {
@@ -52,34 +54,62 @@
     </style>
 </head>
 <body>
-    <div id="loading-overlay">Memuat simulasi...</div>
+    <!-- Loading screen to be displayed while the simulation initializes -->
+    <div id="loading-overlay">Loading simulation...</div>
+    
+    <!-- Information panel with details and instructions -->
     <div id="info">
         <h1>Lorenz Attractor Simulation</h1>
-        <p>Parameter: &sigma; = 10, &rho; = 28, &beta; = 2.667</p>
-        <p>Gunakan mouse untuk memutar.</p>
-        <p>Gunakan scroll mouse atau cubit dua jari (layar sentuh) untuk zoom in/out.</p>
+        <p>Parameters: &sigma; = 10, &rho; = 28, &beta; = 2.667</p>
+        <p>Use the mouse to rotate.</p>
+        <p>Use the mouse wheel or two-finger pinch (touchscreen) to zoom in/out.</p>
     </div>
 
     <script>
-        let scene, camera, renderer, line, stars; 
-        let lx = 0.01, ly = 0, lz = 0; 
-        let dt = 0.01; 
-        let sigma = 10, rho = 28, beta = 8/3; 
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
+        // Global Variables & Scene Setup
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
 
+        let scene, camera, renderer, line, stars;
+
+        // Starting point for the Lorenz system.
+        let lx = 0.01, ly = 0, lz = 0;
+
+        // These are the classic parameters for the Lorenz system.
+        const dt = 0.01; // The time step for each calculation.
+        const sigma = 10;
+        const rho = 28;
+        const beta = 8 / 3;
+
+        // We'll store the path of the attractor in this array.
         let trailPoints = [];
-        const maxTrailPoints = 10000; 
+        const maxTrailPoints = 10000; // Keeps the trail from getting infinitely long.
 
+        // Three.js objects for drawing the line.
         let geometry, material;
+
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
+        // User Interaction
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
 
         let isDragging = false;
         let previousMousePosition = { x: 0, y: 0 };
+
+        // Variables to control camera's orbital position.
         let cameraRotationX = 0;
         let cameraRotationY = 0;
-        let rotationSpeed = 0.005;
-        let cameraDistance = 100; 
+        let cameraDistance = 100;
+        const rotationSpeed = 0.005;
 
-        let lastTouchDistance = null; 
+        // For handling pinch-to-zoom on touch screens.
+        let lastTouchDistance = null;
+        
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
+        // Initialization
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
 
+        // This function creates a nice, soft texture for the stars.
+        // Instead of hard squares, they'll look like little glowing orbs.
         function createCircleTexture() {
             const size = 256; 
             const canvas = document.createElement('canvas');
@@ -87,6 +117,7 @@
             canvas.height = size;
             const context = canvas.getContext('2d');
 
+            // A radial gradient makes the circle fade out at the edges.
             const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
             gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');   
             gradient.addColorStop(0.3, 'rgba(255, 255, 255, 1)'); 
@@ -98,17 +129,19 @@
             return new THREE.CanvasTexture(canvas);
         }
 
+        // Kicks everything off: sets up the scene, objects, and event listeners.
         function init() {
             scene = new THREE.Scene();
-            scene.background = null; 
+            scene.background = null; // Let the CSS background show through.
 
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); 
-            renderer.setPixelRatio(window.devicePixelRatio); 
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio); // For crisp rendering on high-res screens.
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
+            // Create a starfield for the background.
             const numStars = 20000; 
             const starGeometry = new THREE.BufferGeometry();
             const starPositions = [];
@@ -124,25 +157,28 @@
             const starMaterial = new THREE.PointsMaterial({
                 color: 0xFFFFFF, 
                 size: 2, 
-                sizeAttenuation: true, 
+                sizeAttenuation: true, // Stars farther away appear smaller.
                 transparent: true,
                 map: starTexture, 
                 alphaMap: starTexture, 
-                blending: THREE.AdditiveBlending 
+                blending: THREE.AdditiveBlending // Makes overlapping stars brighter.
             });
             stars = new THREE.Points(starGeometry, starMaterial);
             scene.add(stars);
 
+            // Set up the line that will trace the attractor's path.
             geometry = new THREE.BufferGeometry();
             material = new THREE.LineBasicMaterial({
-                vertexColors: true, 
+                vertexColors: true, // Allows for the gradient color effect.
                 linewidth: 1
             });
             line = new THREE.Line(geometry, material);
             scene.add(line); 
 
+            // The raw coordinates are small, so we scale the whole line up.
             line.scale.set(3, 3, 3); 
 
+            // Listen for user input.
             document.addEventListener('mousedown', onMouseDown, false);
             document.addEventListener('mouseup', onMouseUp, false);
             document.addEventListener('mousemove', onMouseMove, false);
@@ -150,68 +186,94 @@
             document.addEventListener('touchstart', onTouchStart, { passive: false });
             document.addEventListener('touchend', onTouchEnd, false);
             document.addEventListener('touchmove', onTouchMove, { passive: false }); 
-
             window.addEventListener('resize', onWindowResize, false);
-
+            
+            // All done, hide the loading screen.
             document.getElementById('loading-overlay').style.display = 'none';
         }
+        
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
+        // Simulation & Animation Loop
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
 
+        // This is the core of the simulation. It calculates the next point
+        // in the Lorenz system and updates the line on screen.
         function updateLorenzAttractor() {
+            // These are the three differential equations that define the system.
             let dx = sigma * (ly - lx) * dt;
             let dy = (lx * (rho - lz) - ly) * dt;
             let dz = (lx * ly - beta * lz) * dt;
 
+            // Add the changes to our current position.
             lx += dx;
             ly += dy;
             lz += dz;
 
+            // Store this new point.
             const newPoint = new THREE.Vector3(lx, ly, lz);
-
             trailPoints.push(newPoint);
 
+            // To keep things fast, we chop off the oldest point if the trail gets too long.
             if (trailPoints.length > maxTrailPoints) {
                 trailPoints.shift(); 
             }
 
+            // Now, we'll update the line's geometry and color.
             const positionsArray = [];
             const colorsArray = []; 
             const currentCenterPoint = trailPoints[trailPoints.length - 1]; 
 
-            const startColor = new THREE.Color(0x404050); 
-            const endColor = new THREE.Color(0x88ffaa);   
+            const startColor = new THREE.Color(0x404050); // Older points are dimmer.
+            const endColor = new THREE.Color(0x88ffaa);   // The newest point is bright.
 
             for (let i = 0; i < trailPoints.length; i++) {
+                // We center the whole drawing on the newest point. This makes the
+                // camera movement feel smooth as it follows the "head" of the trail.
                 positionsArray.push(
                     trailPoints[i].x - currentCenterPoint.x,
                     trailPoints[i].y - currentCenterPoint.y,
                     trailPoints[i].z - currentCenterPoint.z
                 );
 
+                // Create a color gradient along the line's length.
                 const progress = i / (trailPoints.length - 1);
                 const currentColor = new THREE.Color();
-                currentColor.copy(startColor).lerp(endColor, progress); 
+                currentColor.copy(startColor).lerp(endColor, progress);
                 colorsArray.push(currentColor.r, currentColor.g, currentColor.b);
             }
 
+            // Give the new data to Three.js and tell it to update.
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(positionsArray, 3));
             geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorsArray, 3)); 
             geometry.attributes.position.needsUpdate = true;
-            geometry.attributes.color.needsUpdate = true; 
+            geometry.attributes.color.needsUpdate = true;
         }
 
+        // This function runs on every single frame.
         function animate() {
             requestAnimationFrame(animate);
 
+            // First, calculate the next step in the simulation.
             updateLorenzAttractor(); 
 
+            // Then, update the camera's position based on user input.
+            // We use spherical coordinates to make it orbit around the center.
             camera.position.x = cameraDistance * Math.sin(cameraRotationY) * Math.cos(cameraRotationX);
             camera.position.y = cameraDistance * Math.sin(cameraRotationX);
             camera.position.z = cameraDistance * Math.cos(cameraRotationY) * Math.cos(cameraRotationX);
+            
+            // And make sure it's always looking at the origin.
             camera.lookAt(0, 0, 0); 
 
+            // Finally, draw the scene.
             renderer.render(scene, camera);
         }
 
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
+        // Event Handlers for Controls
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
+
+        // --- Mouse Controls ---
         function onMouseDown(event) {
             isDragging = true;
             previousMousePosition.x = event.clientX;
@@ -226,26 +288,31 @@
             if (!isDragging) return;
             const deltaX = event.clientX - previousMousePosition.x;
             const deltaY = event.clientY - previousMousePosition.y;
+
             cameraRotationY += deltaX * rotationSpeed;
             cameraRotationX += deltaY * rotationSpeed;
+
+            // Don't let the camera flip upside down.
             cameraRotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraRotationX));
+
             previousMousePosition.x = event.clientX;
             previousMousePosition.y = event.clientY;
         }
 
         function onMouseWheel(event) {
-            event.preventDefault();
+            event.preventDefault(); // Stop the page from scrolling.
             cameraDistance += event.deltaY * 0.5;
-            cameraDistance = Math.max(5, Math.min(cameraDistance, 300)); 
+            cameraDistance = Math.max(5, Math.min(cameraDistance, 300)); // Clamp zoom.
         }
 
+        // --- Touch Controls ---
         function onTouchStart(event) {
             event.preventDefault();
-            if (event.touches.length === 1) {
+            if (event.touches.length === 1) { // One finger for rotating.
                 isDragging = true;
                 previousMousePosition.x = event.touches[0].clientX;
                 previousMousePosition.y = event.touches[0].clientY;
-            } else if (event.touches.length === 2) {
+            } else if (event.touches.length === 2) { // Two fingers for zooming.
                 lastTouchDistance = getDistance(event.touches[0], event.touches[1]);
             }
         }
@@ -257,6 +324,7 @@
 
         function onTouchMove(event) {
             event.preventDefault();
+            // Handle rotation.
             if (isDragging && event.touches.length === 1) {
                 const deltaX = event.touches[0].clientX - previousMousePosition.x;
                 const deltaY = event.touches[0].clientY - previousMousePosition.y;
@@ -265,6 +333,7 @@
                 cameraRotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraRotationX));
                 previousMousePosition.x = event.touches[0].clientX;
                 previousMousePosition.y = event.touches[0].clientY;
+            // Handle zooming.
             } else if (event.touches.length === 2) {
                 const currentTouchDistance = getDistance(event.touches[0], event.touches[1]);
                 if (lastTouchDistance) {
@@ -276,18 +345,25 @@
             }
         }
 
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
+        // Helpers & Window Events
+        //––––––––––––––––––––––––––––––––––––––––––––––––––
+
+        // A quick helper to find the distance between two touch points.
         function getDistance(touch1, touch2) {
             const dx = touch1.clientX - touch2.clientX;
             const dy = touch1.clientY - touch2.clientY;
             return Math.sqrt(dx * dx + dy * dy);
         }
 
+        // If the window is resized, we need to update the camera and renderer.
         function onWindowResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
+        // This is the entry point, it runs after the page is fully loaded.
         window.onload = function () {
             init();
             animate();
