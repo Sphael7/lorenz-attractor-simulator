@@ -26,9 +26,6 @@ These are standard parameters that generate the classical Lorenz attractor.
 2. Open `index.html` in a modern web browser (Chrome, Firefox, Edge).
 3. Interact with the simulation using your mouse or touch input.
 
-## Screenshots
-*(Optional: Add a screenshot of the simulation here to make your portfolio more appealing)*
-
 ## License
 This project is licensed under the [MIT License](LICENSE).
 
