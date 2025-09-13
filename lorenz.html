@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lorenz Attractor Simulation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #101018 0%, #05050A 100%);
+            color: #e0e0e0;
+        }
+        canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 14px;
+            color: #e0e0e0;
+            user-select: none;
+            max-width: 90%;
+        }
+        #info h1 {
+            font-size: 18px;
+            margin-top: 0;
+            margin-bottom: 5px;
+            color: #bb86fc;
+        }
+        #info p {
+            margin-bottom: 5px;
+        }
+        #loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 2em;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay">Memuat simulasi...</div>
+    <div id="info">
+        <h1>Lorenz Attractor Simulation</h1>
+        <p>Parameter: &sigma; = 10, &rho; = 28, &beta; = 2.667</p>
+        <p>Gunakan mouse untuk memutar.</p>
+        <p>Gunakan scroll mouse atau cubit dua jari (layar sentuh) untuk zoom in/out.</p>
+    </div>
+
+    <script>
+        let scene, camera, renderer, line, stars; 
+        let lx = 0.01, ly = 0, lz = 0; 
+        let dt = 0.01; 
+        let sigma = 10, rho = 28, beta = 8/3; 
+
+        let trailPoints = [];
+        const maxTrailPoints = 10000; 
+
+        let geometry, material;
+
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let cameraRotationX = 0;
+        let cameraRotationY = 0;
+        let rotationSpeed = 0.005;
+        let cameraDistance = 100; 
+
+        let lastTouchDistance = null; 
+
+        function createCircleTexture() {
+            const size = 256; 
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const context = canvas.getContext('2d');
+
+            const gradient = context.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');   
+            gradient.addColorStop(0.3, 'rgba(255, 255, 255, 1)'); 
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');  
+
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, size, size); 
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = null; 
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true }); 
+            renderer.setPixelRatio(window.devicePixelRatio); 
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            const numStars = 20000; 
+            const starGeometry = new THREE.BufferGeometry();
+            const starPositions = [];
+            for (let i = 0; i < numStars; i++) {
+                const x = (Math.random() - 0.5) * 2000;
+                const y = (Math.random() - 0.5) * 2000;
+                const z = (Math.random() - 0.5) * 2000;
+                starPositions.push(x, y, z);
+            }
+            starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+            
+            const starTexture = createCircleTexture(); 
+            const starMaterial = new THREE.PointsMaterial({
+                color: 0xFFFFFF, 
+                size: 2, 
+                sizeAttenuation: true, 
+                transparent: true,
+                map: starTexture, 
+                alphaMap: starTexture, 
+                blending: THREE.AdditiveBlending 
+            });
+            stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
+
+            geometry = new THREE.BufferGeometry();
+            material = new THREE.LineBasicMaterial({
+                vertexColors: true, 
+                linewidth: 1
+            });
+            line = new THREE.Line(geometry, material);
+            scene.add(line); 
+
+            line.scale.set(3, 3, 3); 
+
+            document.addEventListener('mousedown', onMouseDown, false);
+            document.addEventListener('mouseup', onMouseUp, false);
+            document.addEventListener('mousemove', onMouseMove, false);
+            document.addEventListener('wheel', onMouseWheel, { passive: false }); 
+            document.addEventListener('touchstart', onTouchStart, { passive: false });
+            document.addEventListener('touchend', onTouchEnd, false);
+            document.addEventListener('touchmove', onTouchMove, { passive: false }); 
+
+            window.addEventListener('resize', onWindowResize, false);
+
+            document.getElementById('loading-overlay').style.display = 'none';
+        }
+
+        function updateLorenzAttractor() {
+            let dx = sigma * (ly - lx) * dt;
+            let dy = (lx * (rho - lz) - ly) * dt;
+            let dz = (lx * ly - beta * lz) * dt;
+
+            lx += dx;
+            ly += dy;
+            lz += dz;
+
+            const newPoint = new THREE.Vector3(lx, ly, lz);
+
+            trailPoints.push(newPoint);
+
+            if (trailPoints.length > maxTrailPoints) {
+                trailPoints.shift(); 
+            }
+
+            const positionsArray = [];
+            const colorsArray = []; 
+            const currentCenterPoint = trailPoints[trailPoints.length - 1]; 
+
+            const startColor = new THREE.Color(0x404050); 
+            const endColor = new THREE.Color(0x88ffaa);   
+
+            for (let i = 0; i < trailPoints.length; i++) {
+                positionsArray.push(
+                    trailPoints[i].x - currentCenterPoint.x,
+                    trailPoints[i].y - currentCenterPoint.y,
+                    trailPoints[i].z - currentCenterPoint.z
+                );
+
+                const progress = i / (trailPoints.length - 1);
+                const currentColor = new THREE.Color();
+                currentColor.copy(startColor).lerp(endColor, progress); 
+                colorsArray.push(currentColor.r, currentColor.g, currentColor.b);
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positionsArray, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colorsArray, 3)); 
+            geometry.attributes.position.needsUpdate = true;
+            geometry.attributes.color.needsUpdate = true; 
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            updateLorenzAttractor(); 
+
+            camera.position.x = cameraDistance * Math.sin(cameraRotationY) * Math.cos(cameraRotationX);
+            camera.position.y = cameraDistance * Math.sin(cameraRotationX);
+            camera.position.z = cameraDistance * Math.cos(cameraRotationY) * Math.cos(cameraRotationX);
+            camera.lookAt(0, 0, 0); 
+
+            renderer.render(scene, camera);
+        }
+
+        function onMouseDown(event) {
+            isDragging = true;
+            previousMousePosition.x = event.clientX;
+            previousMousePosition.y = event.clientY;
+        }
+
+        function onMouseUp(event) {
+            isDragging = false;
+        }
+
+        function onMouseMove(event) {
+            if (!isDragging) return;
+            const deltaX = event.clientX - previousMousePosition.x;
+            const deltaY = event.clientY - previousMousePosition.y;
+            cameraRotationY += deltaX * rotationSpeed;
+            cameraRotationX += deltaY * rotationSpeed;
+            cameraRotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraRotationX));
+            previousMousePosition.x = event.clientX;
+            previousMousePosition.y = event.clientY;
+        }
+
+        function onMouseWheel(event) {
+            event.preventDefault();
+            cameraDistance += event.deltaY * 0.5;
+            cameraDistance = Math.max(5, Math.min(cameraDistance, 300)); 
+        }
+
+        function onTouchStart(event) {
+            event.preventDefault();
+            if (event.touches.length === 1) {
+                isDragging = true;
+                previousMousePosition.x = event.touches[0].clientX;
+                previousMousePosition.y = event.touches[0].clientY;
+            } else if (event.touches.length === 2) {
+                lastTouchDistance = getDistance(event.touches[0], event.touches[1]);
+            }
+        }
+
+        function onTouchEnd(event) {
+            isDragging = false;
+            lastTouchDistance = null;
+        }
+
+        function onTouchMove(event) {
+            event.preventDefault();
+            if (isDragging && event.touches.length === 1) {
+                const deltaX = event.touches[0].clientX - previousMousePosition.x;
+                const deltaY = event.touches[0].clientY - previousMousePosition.y;
+                cameraRotationY += deltaX * rotationSpeed;
+                cameraRotationX += deltaY * rotationSpeed;
+                cameraRotationX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, cameraRotationX));
+                previousMousePosition.x = event.touches[0].clientX;
+                previousMousePosition.y = event.touches[0].clientY;
+            } else if (event.touches.length === 2) {
+                const currentTouchDistance = getDistance(event.touches[0], event.touches[1]);
+                if (lastTouchDistance) {
+                    const deltaDistance = currentTouchDistance - lastTouchDistance;
+                    cameraDistance -= deltaDistance * 1.0;
+                    cameraDistance = Math.max(5, Math.min(cameraDistance, 300));
+                }
+                lastTouchDistance = currentTouchDistance;
+            }
+        }
+
+        function getDistance(touch1, touch2) {
+            const dx = touch1.clientX - touch2.clientX;
+            const dy = touch1.clientY - touch2.clientY;
+            return Math.sqrt(dx * dx + dy * dy);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        window.onload = function () {
+            init();
+            animate();
+        };
+    </script>
+</body>
+</html>
